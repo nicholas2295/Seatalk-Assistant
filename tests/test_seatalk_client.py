@@ -36,8 +36,7 @@ async def test_send_message_success():
 
 
 async def test_send_message_unknown_group():
-    with mock_token():
-        result = await seatalk_client.send_message(make_config(), "no-such-group", "Hi")
+    result = await seatalk_client.send_message(make_config(), "no-such-group", "Hi")
 
     assert "no-such-group" in result
     assert "my-team" in result

@@ -10,14 +10,23 @@ _FETCH_URL      = "https://openapi.seatalk.io/v1/chat/group/messages"
 _GROUP_INFO_URL = "https://openapi.seatalk.io/v1/chat/group/info"
 
 
-async def send_message(config: Config, group: str, message: str) -> str:
+async def _resolve_group(
+    config: Config, group: str
+) -> "tuple[str, dict] | str":
+    """Return (group_id, auth_headers) or an error string if group not found."""
     if group not in config.groups:
         available = ", ".join(config.groups.keys())
         return f"Group '{group}' not found. Configured groups: {available}"
-
     group_id = config.groups[group].group_id
     token = await auth.get_token(config)
-    headers = {"Authorization": f"Bearer {token}"}
+    return group_id, {"Authorization": f"Bearer {token}"}
+
+
+async def send_message(config: Config, group: str, message: str) -> str:
+    resolved = await _resolve_group(config, group)
+    if isinstance(resolved, str):
+        return resolved
+    group_id, headers = resolved
     payload = {"group_id": group_id, "tag": "text", "text": {"content": message}}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -31,6 +40,7 @@ async def send_message(config: Config, group: str, message: str) -> str:
                 if attempt == 0:
                     continue
                 return "Request timed out after retry"
+    return "Request timed out after retry"
 
 
 async def list_groups(config: Config) -> str:
@@ -44,16 +54,14 @@ async def list_groups(config: Config) -> str:
 
 
 async def fetch_messages(config: Config, group: str, limit: int = 10) -> str:
-    if group not in config.groups:
-        available = ", ".join(config.groups.keys())
-        return f"Group '{group}' not found. Configured groups: {available}"
+    resolved = await _resolve_group(config, group)
+    if isinstance(resolved, str):
+        return resolved
+    group_id, headers = resolved
 
     if limit < 1:
         return "limit must be at least 1"
 
-    group_id = config.groups[group].group_id
-    token = await auth.get_token(config)
-    headers = {"Authorization": f"Bearer {token}"}
     params = {"group_id": group_id, "limit": limit}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -71,22 +79,20 @@ async def fetch_messages(config: Config, group: str, limit: int = 10) -> str:
                     ]
                     return "\n".join(lines)
                 if response.status_code == 401:
-                    return "Bot token expired or invalid (401). The access token will refresh automatically on the next call."
+                    return "Access token expired or invalid (401). The access token will refresh automatically on the next call."
                 return f"Seatalk error {response.status_code}: {response.text}"
             except httpx.TimeoutException:
                 if attempt == 0:
                     continue
                 return "Request timed out after retry"
+    return "Request timed out after retry"
 
 
 async def get_group_info(config: Config, group: str) -> str:
-    if group not in config.groups:
-        available = ", ".join(config.groups.keys())
-        return f"Group '{group}' not found. Configured groups: {available}"
-
-    group_id = config.groups[group].group_id
-    token = await auth.get_token(config)
-    headers = {"Authorization": f"Bearer {token}"}
+    resolved = await _resolve_group(config, group)
+    if isinstance(resolved, str):
+        return resolved
+    group_id, headers = resolved
     params = {"group_id": group_id}
 
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -103,3 +109,4 @@ async def get_group_info(config: Config, group: str) -> str:
                 if attempt == 0:
                     continue
                 return "Request timed out after retry"
+    return "Request timed out after retry"
