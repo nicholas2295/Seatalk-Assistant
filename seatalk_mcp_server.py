@@ -24,13 +24,14 @@ async def list_groups() -> str:
 
 
 @mcp.tool()
-async def fetch_messages(group: str) -> str:
-    """Not available — Seatalk Get Chat History requires special management approval.
+async def fetch_messages(group: str, limit: int = 10) -> str:
+    """Fetch recent messages from a Seatalk group (requires Get Chat History API permission).
 
     Args:
         group: Name of the group as defined in config.json
+        limit: Number of recent messages to retrieve (default 10, max 100)
     """
-    return await seatalk_client.fetch_messages(config, group)
+    return await seatalk_client.fetch_messages(config, group, limit)
 
 
 @mcp.tool()

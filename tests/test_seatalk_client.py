@@ -101,11 +101,40 @@ async def test_fetch_messages_unknown_group():
     assert "no-such-group" in result
 
 
-async def test_fetch_messages_returns_unavailable():
-    result = await seatalk_client.fetch_messages(make_config(), "my-team")
+@respx.mock
+async def test_fetch_messages_permission_denied():
+    respx.get(seatalk_client._HISTORY_URL).mock(
+        return_value=httpx.Response(200, json={"code": 103, "message": "app permission denied"})
+    )
 
-    assert "not available" in result.lower()
-    assert "management approval" in result.lower()
+    with mock_token():
+        result = await seatalk_client.fetch_messages(make_config(), "my-team")
+
+    assert "permission" in result.lower()
+    assert "Scopes & Permissions" in result
+
+
+@respx.mock
+async def test_fetch_messages_success():
+    respx.get(seatalk_client._HISTORY_URL).mock(
+        return_value=httpx.Response(200, json={
+            "code": 0,
+            "next_cursor": "",
+            "chat_history": [
+                {"sender": {"email": "alice@example.com"}, "tag": "text",
+                 "text": {"plain_text": "Hello"}, "message_sent_time": 1000},
+                {"sender": {"email": "bob@example.com"}, "tag": "text",
+                 "text": {"plain_text": "Hi"}, "message_sent_time": 999},
+            ]
+        })
+    )
+
+    with mock_token():
+        result = await seatalk_client.fetch_messages(make_config(), "my-team", limit=10)
+
+    assert "alice@example.com" in result
+    assert "Hello" in result
+    assert "bob@example.com" in result
 
 
 # --- fetch_message_by_id ---
