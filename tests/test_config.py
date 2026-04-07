@@ -1,25 +1,46 @@
 import json
 import pytest
-from pathlib import Path
 from config import load_config
 
 
-def test_load_config_success(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({
+def _write(tmp_path, data):
+    f = tmp_path / "config.json"
+    f.write_text(json.dumps(data))
+    return str(f)
+
+
+def _valid(tmp_path, **overrides):
+    data = {
+        "app_id": "my-app-id",
+        "app_secret": "my-app-secret",
+        "signing_secret": "my-signing-secret",
         "groups": {
-            "my-team": {"webhook_url": "https://openapi.seatalk.io/webhook/group/abc123"}
+            "my-team": {"group_id": "grp-abc123", "name": "My Team"}
         },
-        "bot_token": "test-token",
-        "signing_secret": "test-secret"
-    }))
+    }
+    data.update(overrides)
+    return _write(tmp_path, data)
 
-    config = load_config(str(config_file))
 
+def test_load_config_success(tmp_path):
+    config = load_config(_valid(tmp_path))
+
+    assert config.app_id == "my-app-id"
+    assert config.app_secret == "my-app-secret"
+    assert config.signing_secret == "my-signing-secret"
     assert "my-team" in config.groups
-    assert config.groups["my-team"].webhook_url == "https://openapi.seatalk.io/webhook/group/abc123"
-    assert config.bot_token == "test-token"
-    assert config.signing_secret == "test-secret"
+    assert config.groups["my-team"].group_id == "grp-abc123"
+    assert config.groups["my-team"].name == "My Team"
+
+
+def test_load_config_name_optional(tmp_path):
+    data = {
+        "app_id": "a", "app_secret": "b",
+        "groups": {"my-team": {"group_id": "grp-abc123"}},
+    }
+    config = load_config(_write(tmp_path, data))
+
+    assert config.groups["my-team"].name is None
 
 
 def test_load_config_missing_file():
@@ -27,47 +48,44 @@ def test_load_config_missing_file():
         load_config("/nonexistent/config.json")
 
 
-def test_load_config_missing_groups_key(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"bot_token": "tok"}))
+def test_load_config_missing_app_id(tmp_path):
+    data = {
+        "app_secret": "b",
+        "groups": {"my-team": {"group_id": "grp-abc123"}},
+    }
+    with pytest.raises(ValueError, match="app_id"):
+        load_config(_write(tmp_path, data))
 
+
+def test_load_config_missing_app_secret(tmp_path):
+    data = {
+        "app_id": "a",
+        "groups": {"my-team": {"group_id": "grp-abc123"}},
+    }
+    with pytest.raises(ValueError, match="app_secret"):
+        load_config(_write(tmp_path, data))
+
+
+def test_load_config_missing_groups_key(tmp_path):
+    data = {"app_id": "a", "app_secret": "b"}
     with pytest.raises(ValueError, match="groups"):
-        load_config(str(config_file))
+        load_config(_write(tmp_path, data))
 
 
 def test_load_config_empty_groups(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"groups": {}}))
-
+    data = {"app_id": "a", "app_secret": "b", "groups": {}}
     with pytest.raises(ValueError, match="at least one group"):
-        load_config(str(config_file))
+        load_config(_write(tmp_path, data))
 
 
-def test_load_config_group_missing_webhook(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({
-        "groups": {"my-team": {}}
-    }))
-
-    with pytest.raises(ValueError, match="webhook_url"):
-        load_config(str(config_file))
+def test_load_config_group_missing_group_id(tmp_path):
+    data = {"app_id": "a", "app_secret": "b", "groups": {"my-team": {}}}
+    with pytest.raises(ValueError, match="group_id"):
+        load_config(_write(tmp_path, data))
 
 
-def test_load_config_optional_fields_absent(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({
-        "groups": {"my-team": {"webhook_url": "https://example.com/wh"}}
-    }))
-
-    config = load_config(str(config_file))
-
-    assert config.bot_token is None
-    assert config.signing_secret is None
-
-
-def test_load_config_group_empty_webhook(tmp_path):
-    config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({"groups": {"my-team": {"webhook_url": ""}}}))
-
-    with pytest.raises(ValueError, match="webhook_url"):
-        load_config(str(config_file))
+def test_load_config_malformed_json(tmp_path):
+    f = tmp_path / "config.json"
+    f.write_text("{bad json")
+    with pytest.raises(ValueError, match="invalid JSON"):
+        load_config(str(f))

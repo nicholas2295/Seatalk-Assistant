@@ -1,9 +1,11 @@
 {
+  "app_id": "<obtain from Seatalk Developer Portal — Basic Info & Credentials>",
+  "app_secret": "<obtain from Seatalk Developer Portal — Basic Info & Credentials>",
+  "signing_secret": "<obtain from Seatalk Developer Portal — optional, for future webhook verification>",
   "groups": {
     "example-group": {
-      "webhook_url": "https://openapi.seatalk.io/webhook/group/<your-group-id>"
+      "name": "Human-readable group name (optional)",
+      "group_id": "<Seatalk group ID — find via Get Group Info API or Developer Portal>"
     }
-  },
-  "bot_token": "<obtain from Seatalk Developer Portal>",
-  "signing_secret": "<obtain from Seatalk Developer Portal — reserved for future webhook signature verification>"
+  }
 }
