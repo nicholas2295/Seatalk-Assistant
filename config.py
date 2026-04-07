@@ -48,10 +48,10 @@ def load_config(path: str | None = None) -> "Config":
 
     groups = {}
     for key, group_data in data["groups"].items():
-        if "group_id" not in group_data or not str(group_data["group_id"]).strip():
+        if "group_id" not in group_data or not isinstance(group_data["group_id"], str) or not group_data["group_id"].strip():
             raise ValueError(f"Group '{key}' is missing 'group_id'")
         groups[key] = GroupConfig(
-            group_id=str(group_data["group_id"]),
+            group_id=group_data["group_id"],
             name=group_data.get("name"),
         )
 

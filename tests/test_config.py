@@ -66,6 +66,26 @@ def test_load_config_missing_app_secret(tmp_path):
         load_config(_write(tmp_path, data))
 
 
+def test_load_config_whitespace_app_id(tmp_path):
+    data = {
+        "app_id": "   ",
+        "app_secret": "b",
+        "groups": {"my-team": {"group_id": "grp-abc123"}},
+    }
+    with pytest.raises(ValueError, match="app_id"):
+        load_config(_write(tmp_path, data))
+
+
+def test_load_config_whitespace_app_secret(tmp_path):
+    data = {
+        "app_id": "a",
+        "app_secret": "   ",
+        "groups": {"my-team": {"group_id": "grp-abc123"}},
+    }
+    with pytest.raises(ValueError, match="app_secret"):
+        load_config(_write(tmp_path, data))
+
+
 def test_load_config_missing_groups_key(tmp_path):
     data = {"app_id": "a", "app_secret": "b"}
     with pytest.raises(ValueError, match="groups"):
