@@ -63,3 +63,11 @@ def test_load_config_optional_fields_absent(tmp_path):
 
     assert config.bot_token is None
     assert config.signing_secret is None
+
+
+def test_load_config_group_empty_webhook(tmp_path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(json.dumps({"groups": {"my-team": {"webhook_url": ""}}}))
+
+    with pytest.raises(ValueError, match="webhook_url"):
+        load_config(str(config_file))

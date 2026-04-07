@@ -27,7 +27,10 @@ def load_config(path: str | None = None) -> Config:
         )
 
     with open(config_path) as f:
-        data = json.load(f)
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"config.json contains invalid JSON: {exc}") from exc
 
     if "groups" not in data or not isinstance(data["groups"], dict):
         raise ValueError("config.json must contain a 'groups' object")
@@ -39,7 +42,10 @@ def load_config(path: str | None = None) -> Config:
     for name, group_data in data["groups"].items():
         if "webhook_url" not in group_data:
             raise ValueError(f"Group '{name}' is missing 'webhook_url'")
-        groups[name] = GroupConfig(webhook_url=group_data["webhook_url"])
+        url = group_data["webhook_url"]
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError(f"Group '{name}' has an empty or invalid 'webhook_url'")
+        groups[name] = GroupConfig(webhook_url=url)
 
     return Config(
         groups=groups,
