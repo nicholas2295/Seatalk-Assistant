@@ -65,3 +65,20 @@ async def test_get_token_api_error():
 
     with pytest.raises(RuntimeError, match="401"):
         await auth.get_token(make_config())
+
+
+@respx.mock
+async def test_get_token_missing_access_token_field():
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"expire_in": 7200}))
+
+    with pytest.raises(RuntimeError, match="access_token"):
+        await auth.get_token(make_config())
+
+
+@respx.mock
+async def test_get_token_network_error():
+    config = make_config()
+    respx.post(TOKEN_URL).mock(side_effect=httpx.ConnectError("connection refused"))
+
+    with pytest.raises(RuntimeError, match="Network error"):
+        await auth.get_token(config)
