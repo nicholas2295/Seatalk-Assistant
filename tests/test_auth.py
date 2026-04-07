@@ -20,8 +20,8 @@ TOKEN_URL = auth._TOKEN_URL
 @respx.mock
 async def test_get_token_success():
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={
-        "access_token": "tok-abc",
-        "expire_in": 7200,
+        "app_access_token": "tok-abc",
+        "expire": int(time.time()) + 7200,
     }))
 
     token = await auth.get_token(make_config())
@@ -32,9 +32,10 @@ async def test_get_token_success():
 @respx.mock
 async def test_get_token_cached():
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={
-        "access_token": "tok-abc",
-        "expire_in": 7200,
+        "app_access_token": "tok-abc",
+        "expire": int(time.time()) + 7200,
     }))
+
 
     config = make_config()
     await auth.get_token(config)
@@ -46,8 +47,8 @@ async def test_get_token_cached():
 @respx.mock
 async def test_get_token_refreshes_when_expired():
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={
-        "access_token": "tok-new",
-        "expire_in": 7200,
+        "app_access_token": "tok-new",
+        "expire": int(time.time()) + 7200,
     }))
 
     config = make_config()
@@ -69,9 +70,9 @@ async def test_get_token_api_error():
 
 @respx.mock
 async def test_get_token_missing_access_token_field():
-    respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"expire_in": 7200}))
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"expire": int(time.time()) + 7200}))
 
-    with pytest.raises(RuntimeError, match="access_token"):
+    with pytest.raises(RuntimeError, match="app_access_token"):
         await auth.get_token(make_config())
 
 

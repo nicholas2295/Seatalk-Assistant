@@ -39,12 +39,14 @@ async def get_token(config: Config) -> str:
         )
 
     data = response.json()
-    if "access_token" not in data:
+    if "app_access_token" not in data:
         raise RuntimeError(
-            f"Seatalk token response missing 'access_token' field: {response.text}"
+            f"Seatalk token response missing 'app_access_token' field: {response.text}"
         )
-    token = data["access_token"]
-    expire_in = int(data.get("expire_in", 7200))
-    _cache[id(config)] = _TokenEntry(token=token, expires_at=time.monotonic() + expire_in)
+    token = data["app_access_token"]
+    # 'expire' is an absolute Unix timestamp
+    expire_unix = int(data.get("expire", time.time() + 7200))
+    expires_at = time.monotonic() + (expire_unix - time.time())
+    _cache[id(config)] = _TokenEntry(token=token, expires_at=expires_at)
 
     return token
