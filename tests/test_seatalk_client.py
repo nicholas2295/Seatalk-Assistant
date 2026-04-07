@@ -26,7 +26,6 @@ async def test_send_message_success():
     assert result == "Message sent successfully"
 
 
-@respx.mock
 async def test_send_message_unknown_group():
     result = await seatalk_client.send_message(make_config(), "no-such-group", "Hi")
 
@@ -44,12 +43,41 @@ async def test_send_message_webhook_error():
     assert "Bad Request" in result
 
 
+@respx.mock
+async def test_send_message_retries_on_timeout():
+    respx.post(WEBHOOK_URL).mock(side_effect=[
+        httpx.TimeoutException("timeout"),
+        httpx.Response(200),
+    ])
+
+    result = await seatalk_client.send_message(make_config(), "my-team", "Hello")
+
+    assert result == "Message sent successfully"
+
+
+@respx.mock
+async def test_send_message_timeout_after_retry():
+    respx.post(WEBHOOK_URL).mock(side_effect=httpx.TimeoutException("timeout"))
+
+    result = await seatalk_client.send_message(make_config(), "my-team", "Hello")
+
+    assert "timed out" in result.lower() or "retry" in result.lower()
+
+
 # --- list_groups ---
 
 async def test_list_groups():
     result = await seatalk_client.list_groups(make_config())
 
     assert "my-team" in result
+
+
+async def test_list_groups_empty():
+    config = Config(groups={}, bot_token=None, signing_secret=None)
+
+    result = await seatalk_client.list_groups(config)
+
+    assert result == "No groups configured"
 
 
 # --- fetch_messages ---
@@ -69,7 +97,7 @@ async def test_fetch_messages_unknown_group():
 
 @respx.mock
 async def test_fetch_messages_success():
-    respx.get("https://openapi.seatalk.io/v1/chat/group/messages").mock(
+    respx.get(seatalk_client._FETCH_URL).mock(
         return_value=httpx.Response(200, json={
             "messages": [
                 {"sender_name": "Alice", "content": "Hello", "timestamp": "2026-04-07T10:00:00Z"},
@@ -87,7 +115,7 @@ async def test_fetch_messages_success():
 
 @respx.mock
 async def test_fetch_messages_expired_token():
-    respx.get("https://openapi.seatalk.io/v1/chat/group/messages").mock(
+    respx.get(seatalk_client._FETCH_URL).mock(
         return_value=httpx.Response(401)
     )
 

@@ -27,8 +27,6 @@ async def send_message(config: Config, group: str, message: str) -> str:
                     continue
                 return "Request timed out after retry"
 
-    return "Request failed"
-
 
 async def list_groups(config: Config) -> str:
     if not config.groups:
@@ -46,6 +44,9 @@ async def fetch_messages(config: Config, group: str, limit: int = 10) -> str:
             "fetch_messages requires bot_token in config.json — "
             "see config.example.json for instructions"
         )
+
+    if limit < 1:
+        return "limit must be at least 1"
 
     headers = {"Authorization": f"Bearer {config.bot_token}"}
     params = {"group_name": group, "limit": limit}
@@ -71,5 +72,3 @@ async def fetch_messages(config: Config, group: str, limit: int = 10) -> str:
                 if attempt == 0:
                     continue
                 return "Request timed out after retry"
-
-    return "Request failed"
