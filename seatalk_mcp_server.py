@@ -34,5 +34,15 @@ async def fetch_messages(group: str, limit: int = 10) -> str:
     return await seatalk_client.fetch_messages(config, group, limit)
 
 
+@mcp.tool()
+async def get_group_info(group: str) -> str:
+    """Fetch live info for a named Seatalk group (name, member count).
+
+    Args:
+        group: Name of the group as defined in config.json
+    """
+    return await seatalk_client.get_group_info(config, group)
+
+
 if __name__ == "__main__":
     mcp.run()
