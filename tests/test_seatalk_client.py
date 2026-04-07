@@ -101,32 +101,41 @@ async def test_fetch_messages_unknown_group():
     assert "no-such-group" in result
 
 
+async def test_fetch_messages_returns_unavailable():
+    result = await seatalk_client.fetch_messages(make_config(), "my-team")
+
+    assert "not available" in result.lower()
+    assert "management approval" in result.lower()
+
+
+# --- fetch_message_by_id ---
+
 @respx.mock
-async def test_fetch_messages_success():
+async def test_fetch_message_by_id_success():
     respx.get(FETCH_URL).mock(return_value=httpx.Response(200, json={
-        "messages": [
-            {"sender_name": "Alice", "content": "Hello", "timestamp": "2026-04-07T10:00:00Z"},
-            {"sender_name": "Bob",   "content": "Hi",    "timestamp": "2026-04-07T10:01:00Z"},
-        ]
+        "code": 0,
+        "tag": "text",
+        "sender": {"email": "alice@example.com"},
+        "text": {"plain_text": "Hello world"},
     }))
 
     with mock_token():
-        result = await seatalk_client.fetch_messages(make_config(), "my-team", limit=10)
+        result = await seatalk_client.fetch_message_by_id(make_config(), "msg-123")
 
-    assert "Alice" in result
-    assert "Hello" in result
-    assert "Bob" in result
+    assert "alice@example.com" in result
+    assert "Hello world" in result
 
 
 @respx.mock
-async def test_fetch_messages_expired_token():
-    respx.get(FETCH_URL).mock(return_value=httpx.Response(401))
+async def test_fetch_message_by_id_error():
+    respx.get(FETCH_URL).mock(return_value=httpx.Response(200, json={
+        "code": 404, "message": "message not found"
+    }))
 
     with mock_token():
-        result = await seatalk_client.fetch_messages(make_config(), "my-team")
+        result = await seatalk_client.fetch_message_by_id(make_config(), "bad-id")
 
-    assert "401" in result
-    assert any(word in result.lower() for word in ["expired", "invalid"])
+    assert "404" in result
 
 
 # --- get_group_info ---
@@ -141,8 +150,8 @@ async def test_get_group_info_unknown_group():
 @respx.mock
 async def test_get_group_info_success():
     respx.get(INFO_URL).mock(return_value=httpx.Response(200, json={
-        "group_name": "JNT Test Group",
-        "member_count": 5,
+        "code": 0,
+        "group": {"group_name": "JNT Test Group", "group_user_total": 5, "group_bot_total": 1},
     }))
 
     with mock_token():
