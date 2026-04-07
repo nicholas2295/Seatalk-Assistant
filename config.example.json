@@ -1,0 +1,9 @@
+{
+  "groups": {
+    "example-group": {
+      "webhook_url": "https://openapi.seatalk.io/webhook/group/<your-group-id>"
+    }
+  },
+  "bot_token": "<obtain from Seatalk Developer Portal>",
+  "signing_secret": "<obtain from Seatalk Developer Portal>"
+}
