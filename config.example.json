@@ -5,5 +5,5 @@
     }
   },
   "bot_token": "<obtain from Seatalk Developer Portal>",
-  "signing_secret": "<obtain from Seatalk Developer Portal>"
+  "signing_secret": "<obtain from Seatalk Developer Portal — reserved for future webhook signature verification>"
 }

@@ -2,4 +2,11 @@ config.json
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+.env
+.DS_Store
+.idea/
+.vscode/
 .pytest_cache/
