@@ -54,5 +54,36 @@ async def get_group_info(group: str) -> str:
     return await seatalk_client.get_group_info(config, group)
 
 
+@mcp.tool()
+async def list_joined_groups() -> str:
+    """List all Seatalk groups the bot has joined (fetched live from the API)."""
+    return await seatalk_client.list_joined_groups(config)
+
+
+@mcp.tool()
+async def get_employee_code(email: str) -> str:
+    """Look up a Seatalk employee code from an email address.
+
+    Args:
+        email: The colleague's work email address
+    """
+    result = await seatalk_client.get_employee_code(config, email)
+    if isinstance(result, tuple):
+        code, name = result
+        return f"{name}: {code}"
+    return result
+
+
+@mcp.tool()
+async def send_dm(email: str, message: str) -> str:
+    """Send a direct message to a colleague by their work email address.
+
+    Args:
+        email: The colleague's work email address
+        message: Text content to send
+    """
+    return await seatalk_client.send_dm(config, email, message)
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -1,0 +1,6 @@
+# Local config (contains webhook secrets)
+seatalk-listener.conf
+
+# Runtime artifacts
+logs/
+state/

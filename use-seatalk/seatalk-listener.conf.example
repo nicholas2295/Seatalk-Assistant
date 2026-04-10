@@ -1,0 +1,12 @@
+# Copy to ~/.use-seatalk/seatalk-listener.conf (recommended) OR seatalk-listener.conf in this directory.
+# Only ONE of those files is loaded by config.sh — put all variables in the file you use.
+
+# Work Assistant only (SeaTalk name "Work Assistant", Redux group id 4172747).
+# Empty / unset = listen to ALL groups (do not use unless intentional).
+SEATALK_WATCH_GROUPS="4172747"
+SEATALK_AGENT_TARGET="main"
+SEATALK_ADMIN_IDS="90668"
+
+# Required for seatalk-reply.sh / safe-reply.sh
+# SEATALK_WEBHOOK_URL="https://openapi.seatalk.io/webhook/group/YOUR_TOKEN"
+# SEATALK_REPLY_FORMAT="text"

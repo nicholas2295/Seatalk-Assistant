@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.seatalk.debug</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+PORT="${SEATALK_CDP_PORT:-19222}"
+
+# Already running with debug port and CDP responding? Nothing to do.
+if pgrep -f "remote-debugging-port" &gt; /dev/null 2&gt;&amp;1; then
+    if curl -sS --connect-timeout 2 "http://127.0.0.1:${PORT}/json" 2&gt;/dev/null | head -c 10 | grep -q .; then
+        exit 0
+    fi
+fi
+
+# Use seatalk-restart-debug.sh if available (handles Electron 30+ app.asar patching).
+SCRIPT_DIR="${SEATALK_SKILL_DIR:-__SKILL_DIR__}/scripts"
+if [ -x "$SCRIPT_DIR/seatalk-restart-debug.sh" ]; then
+    exec bash "$SCRIPT_DIR/seatalk-restart-debug.sh"
+fi
+
+# Fallback: kill and relaunch with CLI args.
+if pgrep -f "SeaTalk.app/Contents/MacOS/SeaTalk" &gt; /dev/null 2&gt;&amp;1; then
+    killall SeaTalk 2&gt;/dev/null || true
+    sleep 2
+fi
+open -a SeaTalk --args --remote-debugging-port="$PORT" --remote-allow-origins="http://127.0.0.1:${PORT}"
+        </string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SEATALK_CDP_PORT</key>
+        <string>19222</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/nicholas.lim/Library/Logs/seatalk-debug.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nicholas.lim/Library/Logs/seatalk-debug.log</string>
+</dict>
+</plist>

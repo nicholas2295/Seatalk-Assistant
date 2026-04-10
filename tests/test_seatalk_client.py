@@ -5,10 +5,13 @@ from unittest.mock import AsyncMock, patch
 from config import Config, GroupConfig
 import seatalk_client
 
-GROUP_ID = "grp-abc123"
-SEND_URL = seatalk_client._SEND_GROUP_URL
-FETCH_URL = seatalk_client._FETCH_URL
-INFO_URL  = seatalk_client._GROUP_INFO_URL
+GROUP_ID    = "grp-abc123"
+SEND_URL    = seatalk_client._SEND_GROUP_URL
+FETCH_URL   = seatalk_client._FETCH_URL
+INFO_URL    = seatalk_client._GROUP_INFO_URL
+LIST_URL    = seatalk_client._JOINED_GROUPS_URL
+EMP_URL     = seatalk_client._EMPLOYEE_CODE_URL
+SEND_DM_URL = seatalk_client._SEND_DM_URL
 
 
 def make_config():
@@ -198,3 +201,119 @@ async def test_get_group_info_api_error():
         result = await seatalk_client.get_group_info(make_config(), "my-team")
 
     assert "403" in result
+
+
+# --- list_joined_groups ---
+
+@respx.mock
+async def test_list_joined_groups_success():
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json={
+        "code": 0,
+        "next_cursor": "",
+        "joined_group_chats": {"group_id": ["grp-1", "grp-2"]},
+    }))
+
+    with mock_token():
+        result = await seatalk_client.list_joined_groups(make_config())
+
+    assert "grp-1" in result
+    assert "grp-2" in result
+
+
+@respx.mock
+async def test_list_joined_groups_empty():
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json={
+        "code": 0, "joined_group_chats": {"group_id": []}
+    }))
+
+    with mock_token():
+        result = await seatalk_client.list_joined_groups(make_config())
+
+    assert "not in any groups" in result.lower()
+
+
+@respx.mock
+async def test_list_joined_groups_api_error():
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json={"code": 403, "message": "forbidden"}))
+
+    with mock_token():
+        result = await seatalk_client.list_joined_groups(make_config())
+
+    assert "403" in result
+
+
+# --- get_employee_code ---
+
+@respx.mock
+async def test_get_employee_code_success():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={
+        "code": 0,
+        "employees": [{"employee_code": "EMP001", "display_name": "Alice"}],
+    }))
+
+    with mock_token():
+        result = await seatalk_client.get_employee_code(make_config(), "alice@example.com")
+
+    assert result == ("EMP001", "Alice")
+
+
+@respx.mock
+async def test_get_employee_code_not_found():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={"code": 0, "employees": []}))
+
+    with mock_token():
+        result = await seatalk_client.get_employee_code(make_config(), "nobody@example.com")
+
+    assert isinstance(result, str)
+    assert "nobody@example.com" in result
+
+
+@respx.mock
+async def test_get_employee_code_api_error():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={"code": 500, "message": "internal error"}))
+
+    with mock_token():
+        result = await seatalk_client.get_employee_code(make_config(), "alice@example.com")
+
+    assert "500" in result
+
+
+# --- send_dm ---
+
+@respx.mock
+async def test_send_dm_success():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={
+        "code": 0,
+        "employees": [{"employee_code": "EMP001", "display_name": "Alice"}],
+    }))
+    respx.post(SEND_DM_URL).mock(return_value=httpx.Response(200, json={"code": 0}))
+
+    with mock_token():
+        result = await seatalk_client.send_dm(make_config(), "alice@example.com", "Hey!")
+
+    assert "Alice" in result
+    assert "alice@example.com" in result
+
+
+@respx.mock
+async def test_send_dm_employee_not_found():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={"code": 0, "employees": []}))
+
+    with mock_token():
+        result = await seatalk_client.send_dm(make_config(), "ghost@example.com", "Hi")
+
+    assert "ghost@example.com" in result
+
+
+@respx.mock
+async def test_send_dm_api_error():
+    respx.post(EMP_URL).mock(return_value=httpx.Response(200, json={
+        "code": 0,
+        "employees": [{"employee_code": "EMP001", "display_name": "Alice"}],
+    }))
+    respx.post(SEND_DM_URL).mock(return_value=httpx.Response(200, json={"code": 400, "message": "bad request"}))
+
+    with mock_token():
+        result = await seatalk_client.send_dm(make_config(), "alice@example.com", "Hey!")
+
+    assert "400" in result
