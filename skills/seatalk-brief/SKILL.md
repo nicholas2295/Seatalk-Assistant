@@ -279,12 +279,18 @@ Replace `LAST_TS` with the actual `last_briefing_ts` value. The output is the **
 (omit section if nothing)
 
 ---
+**Tagged in Groups** ⚑
+• [{group ID from source key, e.g. "3259178"}] Context: {brief summary of thread leading up to tag} — {time SGT}
+  ↳ @Nicholas: "{the message that tagged you}"
+(omit section if no tagged messages)
+
+---
 **Can Wait**
 • [{source}] {Name}: {1-line summary}
 (omit section if nothing)
 ```
 
-Rules: lead with most important; deduplicate cross-source topics; skip images/files with no caption; SGT = UTC+8.
+Rules: lead with most important; deduplicate cross-source topics; skip images/files with no caption; SGT = UTC+8. For Tagged in Groups: use the `tagged: true` flag to identify the tag message; summarise preceding context as a brief thread lead-in; if entry has a `thread` key, append "(thread)" to the bracket label, e.g. [3259178 (thread)].
 
 ### Step 5 — Send via webhook
 
