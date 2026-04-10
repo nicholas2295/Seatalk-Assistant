@@ -62,6 +62,47 @@ for G in $UNREAD_GROUPS; do
 done
 ```
 
+### Step 2b — Fetch threads for tagged messages
+
+Run a quick pre-scan to discover thread IDs in the tagged-group files, then fetch those threads. Skip this step entirely if no thread IDs are found.
+
+```bash
+S="/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts"
+mkdir -p /tmp/st-tagged-threads
+
+python3 - <<'SCAN_EOF'
+import json, glob
+NICHOLAS = 47934
+seen = set()
+for path in sorted(glob.glob('/tmp/st-tagged-groups/*.json')):
+    try:
+        msgs = json.load(open(path))
+        for m in msgs:
+            try:
+                mids = [int(x) for x in (m.get('mentionedIds') or []) if str(x).isdigit()]
+            except:
+                mids = []
+            if NICHOLAS not in mids:
+                continue
+            thread_id = m.get('threadId') or m.get('replyToThread') or m.get('threadRootId')
+            if thread_id:
+                seen.add(str(thread_id))
+    except:
+        pass
+for tid in sorted(seen):
+    print(tid)
+SCAN_EOF
+```
+
+For each thread ID printed above, run:
+
+```bash
+THREAD_ID=<id_from_above>
+python3 "$S/cdp-reader.py" thread-messages --thread "$THREAD_ID" 2>/dev/null > "/tmp/st-tagged-threads/$THREAD_ID.json"
+```
+
+> **Note:** If the scan prints nothing, skip this step — no threaded tags were found.
+
 ### Step 3 — Pre-filter (run before reading any data into context)
 
 Run this script with `last_briefing_ts` as argument. Read only the compact output — **never read the raw JSON files**.
@@ -108,7 +149,7 @@ CONTEXT_BEFORE = 20
 CONTEXT_AFTER = 10
 
 def proc_tagged_group(msgs, src):
-    """Find messages that tag Nicholas and return windowed context."""
+    """Find messages that tag Nicholas; prefer full thread context, fall back to ±window."""
     if not msgs:
         return
     msgs_sorted = sorted(msgs, key=lambda m: m.get('timestamp', 0))
@@ -125,22 +166,55 @@ def proc_tagged_group(msgs, src):
 
     included = set()
     out = []
+    used_thread_ids = set()
+
     for ti in tagged_indices:
+        m = msgs_sorted[ti]
+        thread_id = m.get('threadId') or m.get('replyToThread') or m.get('threadRootId')
+
+        if thread_id and str(thread_id) not in used_thread_ids:
+            thread_path = f'/tmp/st-tagged-threads/{thread_id}.json'
+            try:
+                thread_msgs = json.load(open(thread_path))
+                if not thread_msgs:
+                    raise FileNotFoundError
+                used_thread_ids.add(str(thread_id))
+                for tm in thread_msgs:
+                    tag = tm.get('tag', 'text')
+                    text = (tm.get('text') or '').strip()
+                    if not text and tag == 'text':
+                        continue
+                    e = {
+                        't': fmt(tm.get('timestamp', 0)),
+                        'from': tm.get('senderName', '?'),
+                        'sid': tm.get('senderId'),
+                        'thread': str(thread_id),
+                    }
+                    if text:
+                        e['msg'] = text[:MAX] + ('…' if len(text) > MAX else '')
+                    if tag != 'text':
+                        e['type'] = tag
+                    out.append(e)
+                continue
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass  # fall through to window
+
+        # Window fallback: CONTEXT_BEFORE before + CONTEXT_AFTER after
         window_start = max(0, ti - CONTEXT_BEFORE)
         window_end = min(len(msgs_sorted), ti + CONTEXT_AFTER + 1)
         for i in range(window_start, window_end):
             if i in included:
                 continue
             included.add(i)
-            m = msgs_sorted[i]
-            tag = m.get('tag', 'text')
-            text = (m.get('text') or '').strip()
+            wm = msgs_sorted[i]
+            tag = wm.get('tag', 'text')
+            text = (wm.get('text') or '').strip()
             if not text and tag == 'text':
                 continue
             e = {
-                't': fmt(m['timestamp']),
-                'from': m.get('senderName', '?'),
-                'sid': m.get('senderId'),
+                't': fmt(wm['timestamp']),
+                'from': wm.get('senderName', '?'),
+                'sid': wm.get('senderId'),
             }
             if text:
                 e['msg'] = text[:MAX] + ('…' if len(text) > MAX else '')
@@ -148,10 +222,8 @@ def proc_tagged_group(msgs, src):
                 e['type'] = tag
             if i == ti:
                 e['tagged'] = True
-            thread_id = m.get('threadId') or m.get('replyToThread') or m.get('threadRootId')
-            if thread_id:
-                e['threadId'] = str(thread_id)
             out.append(e)
+
     if out:
         results[src] = out
 
