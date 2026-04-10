@@ -104,6 +104,57 @@ def load(path, src, mode):
         proc(json.load(open(path)), src, mode)
     except: pass
 
+CONTEXT_BEFORE = 20
+CONTEXT_AFTER = 10
+
+def proc_tagged_group(msgs, src):
+    """Find messages that tag Nicholas and return windowed context."""
+    if not msgs:
+        return
+    msgs_sorted = sorted(msgs, key=lambda m: m.get('timestamp', 0))
+    msgs_sorted = [m for m in msgs_sorted if m.get('timestamp', 0) >= since]
+    if not msgs_sorted:
+        return
+
+    tagged_indices = [
+        i for i, m in enumerate(msgs_sorted)
+        if str(NICHOLAS) in str(m.get('mentionedIds', []))
+    ]
+    if not tagged_indices:
+        return
+
+    included = set()
+    out = []
+    for ti in tagged_indices:
+        window_start = max(0, ti - CONTEXT_BEFORE)
+        window_end = min(len(msgs_sorted), ti + CONTEXT_AFTER + 1)
+        for i in range(window_start, window_end):
+            if i in included:
+                continue
+            included.add(i)
+            m = msgs_sorted[i]
+            tag = m.get('tag', 'text')
+            text = (m.get('text') or '').strip()
+            if not text and tag == 'text':
+                continue
+            e = {
+                't': fmt(m['timestamp']),
+                'from': m.get('senderName', '?'),
+                'sid': m.get('senderId'),
+            }
+            if text:
+                e['msg'] = text[:MAX] + ('…' if len(text) > MAX else '')
+            if tag != 'text':
+                e['type'] = tag
+            if i == ti:
+                e['tagged'] = True
+            thread_id = m.get('threadId') or m.get('replyToThread') or m.get('threadRootId')
+            if thread_id:
+                e['threadId'] = str(thread_id)
+            out.append(e)
+    if out:
+        results[src] = out
+
 load('/tmp/st-g-sip-core.json',  'SIP Core',   'group')
 load('/tmp/st-g-swarm.json',     'Swarm Mktg', 'group')
 load('/tmp/st-g-sip-leads.json', 'SIP Leads',  'group')
@@ -123,6 +174,14 @@ for path in sorted(glob.glob('/tmp/st-buddies/*.json')):
         name = next((m.get('senderName', '?') for m in msgs if str(m.get('senderId')) != str(NICHOLAS)), '?')
         proc(msgs, f'DM:{name}', 'buddy')
     except: pass
+
+for path in sorted(glob.glob('/tmp/st-tagged-groups/*.json')):
+    try:
+        gid = path.split('/')[-1].replace('.json', '')
+        msgs = json.load(open(path))
+        proc_tagged_group(msgs, f'Tagged:{gid}')
+    except:
+        pass
 
 print(json.dumps(results, ensure_ascii=False, separators=(',',':')))
 EOF
