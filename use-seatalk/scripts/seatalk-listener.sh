@@ -61,14 +61,27 @@ read_state() {
     fi
 }
 
-format_message() {
+filter_and_format_message() {
     local json_line="${1:?json line required}"
-    python3 - "$json_line" <<'PY'
-import json, sys, os
+    local max_age="${2:-300}"
+    python3 - "$json_line" "$max_age" <<'PY'
+import json, sys, os, time
 raw = sys.argv[1].strip()
+max_age = int(sys.argv[2])
 if not raw:
     raise SystemExit(1)
 obj = json.loads(raw)
+
+# Staleness filter: skip messages older than max_age seconds
+msg_ts = int(obj.get("timestamp") or 0)
+if msg_ts > 10**12:
+    msg_ts = msg_ts // 1000
+now_ts = int(time.time())
+if msg_ts > 0 and (now_ts - msg_ts) > max_age:
+    age = now_ts - msg_ts
+    print(f"STALE|age={age}s ts={msg_ts}", file=sys.stderr)
+    raise SystemExit(2)
+
 group   = obj.get("groupName") or f"group-{obj.get('sessionId', '?')}"
 gid     = obj.get("sessionId", "?")
 sender  = obj.get("senderName", "unknown")
@@ -173,19 +186,14 @@ run_loop() {
 
             write_state "last_msg" "$(epoch)"
 
-            # ── Staleness filter: skip messages older than MAX_AGE_SEC (timestamps normalized to Unix seconds) ──
-            local msg_ts now_ts msg_age
-            local MAX_AGE_SEC="${SEATALK_MAX_MSG_AGE:-300}"  # default 5 min
-            msg_ts=$(echo "$line" | python3 -c "import json,sys; d=json.load(sys.stdin); t=int(d.get('timestamp') or 0); print(t//1000 if t>10**12 else t)" 2>/dev/null || echo "0")
-            now_ts=$(epoch)
-            if [[ "$msg_ts" -gt 0 ]] && (( now_ts - msg_ts > MAX_AGE_SEC )); then
-                msg_age=$(( now_ts - msg_ts ))
-                log_msg "WARN" "Skipped stale message (age=${msg_age}s > ${MAX_AGE_SEC}s, ts=${msg_ts}): ${line:0:120}"
+            local MAX_AGE_SEC="${SEATALK_MAX_MSG_AGE:-300}"
+            local formatted filter_rc
+            formatted="$(filter_and_format_message "$line" "$MAX_AGE_SEC" 2>/dev/null)" || filter_rc=$?
+            filter_rc=${filter_rc:-0}
+            if [[ "$filter_rc" -eq 2 ]]; then
+                log_msg "WARN" "Skipped stale message (>${MAX_AGE_SEC}s): ${line:0:120}"
                 continue
-            fi
-
-            local formatted
-            if ! formatted="$(format_message "$line" 2>/dev/null)"; then
+            elif [[ "$filter_rc" -ne 0 ]] || [[ -z "$formatted" ]]; then
                 log_msg "WARN" "Skipped message (format error): ${line:0:120}"
                 continue
             fi

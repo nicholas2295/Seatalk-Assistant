@@ -6,6 +6,17 @@ from config import Config, GroupConfig
 import auth
 
 
+@pytest.fixture(autouse=True)
+def _reset_auth_state():
+    """Reset the shared client and cache before each test so respx can intercept."""
+    auth._cache.clear()
+    auth._shared_client = None
+    yield
+    if auth._shared_client and not auth._shared_client.is_closed:
+        # Leave cleanup to the next reset; sync close would block
+        auth._shared_client = None
+
+
 def make_config():
     return Config(
         app_id="test-app-id",
@@ -53,7 +64,7 @@ async def test_get_token_refreshes_when_expired():
 
     config = make_config()
     # Inject an expired cache entry
-    auth._cache[id(config)] = auth._TokenEntry(token="tok-old", expires_at=time.monotonic() - 1)
+    auth._cache[auth._cache_key(config)] = auth._TokenEntry(token="tok-old", expires_at=time.monotonic() - 1)
 
     token = await auth.get_token(config)
 

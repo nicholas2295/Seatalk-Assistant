@@ -31,5 +31,6 @@ class Handler(BaseHTTPRequestHandler):
         pass  # suppress request logs
 
 
-print("Listening on http://localhost:8081 ...")
-HTTPServer(("", 8081), Handler).serve_forever()
+if __name__ == "__main__":
+    print("Listening on http://localhost:8081 ...")
+    HTTPServer(("", 8081), Handler).serve_forever()

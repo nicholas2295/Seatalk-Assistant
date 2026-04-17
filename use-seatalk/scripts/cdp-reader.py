@@ -40,9 +40,14 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import re
+import signal
 import sys
 import time
 import http.client
+import urllib.error
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 try:
@@ -780,12 +785,10 @@ CLOSE_THREAD_CLICK_JS = r"""
 })()
 """
 
-# Scroll thread detail drawer to bottom so SeaTalk loads latest replies and sends read receipts.
-SCROLL_THREAD_DETAIL_PANEL_JS = r"""
+INSTALL_PICK_SCROLLER_JS = r"""
 (function() {
-  var drawer = document.querySelector('.ant-drawer.thread-detail-panel');
-  if (!drawer) return {ok: false, reason: 'no_drawer'};
-  function pickScroller(root) {
+  if (window.__ST_pickScroller__) return 'already installed';
+  window.__ST_pickScroller__ = function(root) {
     var hints = [
       '.scrollbar__view',
       '.ReactVirtualized__List',
@@ -817,7 +820,17 @@ SCROLL_THREAD_DETAIL_PANEL_JS = r"""
       }
     }
     return best;
-  }
+  };
+  return 'installed';
+})()
+"""
+
+# Scroll thread detail drawer to bottom so SeaTalk loads latest replies and sends read receipts.
+SCROLL_THREAD_DETAIL_PANEL_JS = r"""
+(function() {
+  var drawer = document.querySelector('.ant-drawer.thread-detail-panel');
+  if (!drawer) return {ok: false, reason: 'no_drawer'};
+  var pickScroller = window.__ST_pickScroller__ || function() { return null; };
   var sc = pickScroller(drawer);
   if (!sc) return {ok: true, scrolled: false};
   var lastTop = -999, same = 0, round = 0;
@@ -849,40 +862,7 @@ THREAD_PANEL_SIMULATE_READ_JS = r"""
   var drawer = document.querySelector('.ant-drawer.thread-detail-panel');
   if (!drawer) return {ok: false, reason: 'no_drawer'};
   var report = {midCount: 0, focused: false, clicked: false, scrolled: false};
-
-  function pickScroller(root) {
-    var hints = [
-      '.scrollbar__view',
-      '.ReactVirtualized__List',
-      '[class*="thread-detail"] .scrollbar__view',
-      '[class*="message-list"]',
-      '.im-session-main',
-      '.messages-main-content'
-    ];
-    var h, el, st, best = null, bestGrow = 0;
-    for (h = 0; h < hints.length; h++) {
-      var nodes = root.querySelectorAll(hints[h]);
-      for (var j = 0; j < nodes.length; j++) {
-        el = nodes[j];
-        st = window.getComputedStyle(el);
-        if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 24) {
-          var grow = el.scrollHeight - el.clientHeight;
-          if (grow > bestGrow) { bestGrow = grow; best = el; }
-        }
-      }
-    }
-    if (best) return best;
-    var divs = root.querySelectorAll('div');
-    for (var i = 0; i < divs.length; i++) {
-      el = divs[i];
-      st = window.getComputedStyle(el);
-      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 48) {
-        var g = el.scrollHeight - el.clientHeight;
-        if (g > bestGrow) { bestGrow = g; best = el; }
-      }
-    }
-    return best;
-  }
+  var pickScroller = window.__ST_pickScroller__ || function() { return null; };
 
   var ed = drawer.querySelector('.ProseMirror.seatalk-editor-content');
   if (ed && ed.editor && ed.editor.view) {
@@ -1499,8 +1479,14 @@ def _ensure_mid_visible_with_scroll(s: CDPSession, mid: str, max_steps: int = 80
     return bool(s.evaluate(_js_mid_in_dom_expr(mid)))
 
 
+def _ensure_pick_scroller(s: CDPSession) -> None:
+    """Install the shared pickScroller helper into the page if not already present."""
+    s.evaluate(INSTALL_PICK_SCROLLER_JS)
+
+
 def _thread_panel_scroll_to_end(s: CDPSession) -> None:
     """Mimic reading inside the thread drawer (focus, mids, scroll, click) then force scroll to bottom."""
+    _ensure_pick_scroller(s)
     s.evaluate(THREAD_PANEL_SIMULATE_READ_JS)
     time.sleep(0.12)
     s.evaluate(SCROLL_THREAD_DETAIL_PANEL_JS)
@@ -1596,6 +1582,7 @@ def cmd_mark_threads_read(
 ):
     """Open thread; sync until Redux threadInfo unread counts hit 0, then close."""
     s = connect()
+    _ensure_pick_scroller(s)
     _ensure_group(s, group_id)
     time.sleep(0.4)
     raw = s.evaluate(THREAD_LIST_JS % str(group_id))
@@ -1684,6 +1671,77 @@ def cmd_mark_threads_read(
         ok += 1
     s.close()
     print(json.dumps({"ok": True, "openedOk": ok, "openFailed": fail, "total": len(threads)}, indent=2, ensure_ascii=False))
+
+
+CACHED_SESSIONS_JS = r"""
+(function() {
+  var store = window.store;
+  if (!store) return {__error__: 'no store'};
+  var lists = store.getState().messages.lists;
+  var groups = [];
+  var buddies = [];
+  var keys = Object.keys(lists);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var ids = lists[k];
+    var count = ids ? ids.length : 0;
+    if (k.indexOf('group-') === 0) {
+      var parts = k.split('-');
+      if (parts.length === 2) groups.push({id: parseInt(parts[1], 10), messages: count});
+    } else if (k.indexOf('buddy-') === 0) {
+      var parts = k.split('-');
+      if (parts.length === 2) buddies.push({id: parseInt(parts[1], 10), messages: count});
+    }
+  }
+  return {groups: groups, buddies: buddies};
+})()
+"""
+
+
+SAVE_SESSION_JS = r"""
+(function() {
+  var store = window.store;
+  if (!store) return {__error__: 'no store'};
+  var ms = store.getState().messages;
+  var sel = ms.selectedSession;
+  var tid = ms.currentThreadId || null;
+  if (!sel) return {__error__: 'no selectedSession'};
+  return {type: sel.type || null, id: sel.id || null, threadId: tid};
+})()
+"""
+
+
+def cmd_cached_sessions():
+    """List session keys with cached message data in Redux (no UI interaction)."""
+    s = connect()
+    result = getattr(s, 'evaluate')(CACHED_SESSIONS_JS)
+    s.close()
+    if isinstance(result, dict) and "__error__" in result:
+        print(f"ERROR: {result['__error__']}", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_save_session():
+    """Print the currently selected session as JSON (no UI interaction)."""
+    s = connect()
+    result = getattr(s, 'evaluate')(SAVE_SESSION_JS)
+    s.close()
+    if isinstance(result, dict) and "__error__" in result:
+        print(f"ERROR: {result['__error__']}", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_restore_session(session_type: str, session_id: int):
+    """Switch back to a previously saved session (UI interaction: clicks sidebar)."""
+    if session_type == "group":
+        cmd_switch_chat(session_id)
+    elif session_type == "buddy":
+        cmd_switch_buddy(session_id)
+    else:
+        print(f"ERROR: unknown session type '{session_type}'", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_switch_chat(group_id: int):
@@ -1989,7 +2047,6 @@ def _parse_send_segments(text: str) -> list:
 
     Supports: @Name (space-delimited) and @{Name With Spaces}.
     """
-    import re
     segments: list = []
     pattern = re.compile(r'@\{([^}]+)\}|@(\S+)')
     last = 0
@@ -2132,10 +2189,6 @@ def _download_image(url: str, mid: str) -> Optional[str]:
     Strips the thumbnail size suffix (e.g. _80) from the URL to fetch the
     original resolution image.
     """
-    import re
-    import urllib.request
-    import urllib.error
-    import ssl
     os.makedirs(SEATALK_IMAGE_DIR, exist_ok=True)
 
     orig_url = re.sub(r'_\d+\?', '?', url)
@@ -2259,6 +2312,7 @@ LISTEN_RETRY_MULT = float(os.environ.get("SEATALK_LISTEN_RETRY_MULT", "2"))
 
 def _listen_setup(s: CDPSession, group_ids: Optional[List[int]]) -> bool:
     """Inject JS listener, set watch/admin filters. Returns True on success."""
+    _ensure_pick_scroller(s)
     res = s.evaluate(INJECT_LISTENER_JS)
     if isinstance(res, dict) and "__error__" in res:
         print(f"# ERROR installing listener: {res['__error__']}", file=sys.stderr)
@@ -2285,8 +2339,6 @@ def cmd_listen(group_ids: Optional[List[int]] = None, poll_sec: float = DEFAULT_
     Filters out messages with timestamp < since_ts (strict) to avoid replaying old messages.
     After CDP reconnect or listener re-inject, also applies replay guards (see SKILL.md).
     """
-    import random
-
     admin_set = set(ADMIN_IDS) if ADMIN_IDS else None
     current_since_ts = since_ts
     backoff = LISTEN_RETRY_INITIAL
@@ -2578,7 +2630,6 @@ def main():
             gids = _parse_group_ids(rest)
             cmd_read(gids[0] if gids else None)
         elif cmd == "listen":
-            import signal
             def _graceful_exit(signum, frame):
                 print(f"\n# Received signal {signum}, exiting gracefully...", file=sys.stderr)
                 sys.exit(0)
@@ -2672,6 +2723,24 @@ def main():
                 print("Usage: cdp-reader.py read-buddy --buddy BUDDY_ID", file=sys.stderr)
                 sys.exit(1)
             cmd_read_buddy(bid, out_file, limit)
+        elif cmd == "cached-sessions":
+            cmd_cached_sessions()
+        elif cmd == "save-session":
+            cmd_save_session()
+        elif cmd == "restore-session":
+            stype = None
+            sid = None
+            for i, a in enumerate(rest):
+                if a == "--group" and i + 1 < len(rest) and rest[i + 1].strip().isdigit():
+                    stype = "group"
+                    sid = int(rest[i + 1].strip())
+                elif a == "--buddy" and i + 1 < len(rest) and rest[i + 1].strip().isdigit():
+                    stype = "buddy"
+                    sid = int(rest[i + 1].strip())
+            if not stype or not sid:
+                print("Usage: cdp-reader.py restore-session --group ID | --buddy ID", file=sys.stderr)
+                sys.exit(1)
+            cmd_restore_session(stype, sid)
         elif cmd == "switch-chat":
             gids = _parse_group_ids(rest)
             if not gids:

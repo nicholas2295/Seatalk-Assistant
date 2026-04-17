@@ -95,6 +95,48 @@ bash scripts/seatalk-listener.sh stop
 6. **agent-manager** — If `Forwarded → main` appears in `logs/seatalk-listener.log` but Cursor shows nothing, check the agent provider / `agent-manager.sh send` path.
 7. **Webhook replies accepted but not visible** — Group system-account webhooks are documented as `tag: text` + `text.content`. Default reply format is **`text`** (no undocumented `format` field). Use `SEATALK_REPLY_FORMAT=markdown` only if your tenant supports it.
 
+## UI-Safe vs UI-Manipulating Commands
+
+Commands fall into two categories. **Always prefer UI-safe commands** when reading messages so the user can continue using SeaTalk without interruption and messages are not marked as read.
+
+### UI-safe (no visible changes, no read marking)
+
+These commands read from the Redux in-memory store or local DB only. They never click, scroll, or navigate the SeaTalk UI. They do **not** mark messages as read.
+
+| Command | What it reads |
+|---------|---------------|
+| `read --group ID` | Group messages from Redux `messages.lists` / `messages.messages` |
+| `read-buddy --buddy ID` | Private chat messages from Redux |
+| `threads --group ID` | Thread metadata from Redux `threadInfo` |
+| `thread-messages --thread ID` | Thread replies from Redux (requires thread data loaded) |
+| `unread` | Unread counts from Redux `messages.unreadCounts` |
+| `read-unread --group ID` | Messages after ack cursor from Redux |
+| `list-groups` | Joined groups from Redux `contact.groupInfo` |
+| `cached-sessions` | Which group/buddy sessions have data in Redux cache |
+| `save-session` | Currently selected session (for later restore) |
+| `current-chat` / `current-group` / `current-thread` | Messages from the currently open chat (reads Redux only) |
+| `listen` | Live message stream via `store.subscribe` callback |
+| `explore` / `targets` | Store structure probing / CDP target listing |
+| `probe-thread-read` | Thread unread field introspection |
+
+### UI-manipulating (clicks, navigation, may mark messages as read)
+
+These commands interact with the DOM. They cause visible UI changes and **opening a chat marks its messages as read** (same as a manual click).
+
+| Command | What it does |
+|---------|--------------|
+| `switch-chat --group ID` | Clicks sidebar item to switch active group chat |
+| `switch-buddy --buddy ID` | Clicks sidebar item to switch active private chat |
+| `restore-session` | Switches back to a saved session (calls switch-chat/switch-buddy) |
+| `open-thread` | Clicks thread root to open thread panel |
+| `close-thread` | Clicks close button on thread panel |
+| `send` | Types and sends a message in the active editor |
+| `reply-thread` | Switches group + opens thread + sends message |
+| `mark-all-read` | Opens every chat with unread to clear badges |
+| `mark-threads-read` | Scrolls and opens threads to clear thread unread counts |
+
+> **Key insight:** `read` and `read-buddy` do **not** need a prior `switch-chat` / `switch-buddy`. They read whatever is already cached in Redux. The switch commands are only needed to load data for sessions that have never been opened in the current SeaTalk session. Use `cached-sessions` to check data availability before deciding whether switching is needed.
+
 ## Commands
 
 | Command | Description |
@@ -188,6 +230,9 @@ python3 scripts/cdp-reader.py current-group --limit 10           # last 10 messa
 python3 scripts/cdp-reader.py current-thread                     # read currently opened thread
 python3 scripts/cdp-reader.py current-thread --limit 20          # last 20 messages only
 python3 scripts/cdp-reader.py thread-messages --thread TID --output /tmp/out.json  # write to file
+python3 scripts/cdp-reader.py cached-sessions                    # list sessions with cached data
+python3 scripts/cdp-reader.py save-session                       # print current session as JSON
+python3 scripts/cdp-reader.py restore-session --group 499098     # switch back to a saved session
 SEATALK_ALLOW_SEND=true python3 scripts/cdp-reader.py send "Hello world"         # send message
 ```
 
@@ -289,6 +334,16 @@ python3 scripts/cdp-reader.py close-thread
 
 # Reply in a thread (switch + open + send, one step)
 SEATALK_ALLOW_SEND=true python3 scripts/cdp-reader.py reply-thread --group 499098 --message MID "reply text"
+
+# Check which sessions have cached data (UI-safe)
+python3 scripts/cdp-reader.py cached-sessions
+
+# Save current session before switching (UI-safe)
+python3 scripts/cdp-reader.py save-session
+
+# Restore a previously saved session (UI-manipulating)
+python3 scripts/cdp-reader.py restore-session --group 499098
+python3 scripts/cdp-reader.py restore-session --buddy 205031
 ```
 
 - `unread` — Returns JSON array of `{groupId, groupName, unread, ack}`. Pass `--groups ID1,ID2` to query specific groups, or omit to get all groups with unread > 0, sorted by count descending.
@@ -302,6 +357,12 @@ SEATALK_ALLOW_SEND=true python3 scripts/cdp-reader.py reply-thread --group 49909
 - `open-thread` — Opens a thread panel for the specified message. Auto-switches group if needed. The message must be visible in the chat list (recently loaded).
 - `close-thread` — Closes the currently open thread panel by clicking the back button.
 - `reply-thread` — One-step compound: switch group + open thread + send message. Controlled by `SEATALK_ALLOW_SEND`.
+
+**Session introspection commands (UI-safe):**
+
+- `cached-sessions` — Returns JSON `{groups: [{id, messages}], buddies: [{id, messages}]}` listing all sessions that have message data in the Redux cache. Use this to check data availability before deciding whether to switch chats. No UI interaction.
+- `save-session` — Returns JSON `{type, id, threadId}` describing the currently selected session. Use before any UI-switching operations so you can restore the user's view afterward. No UI interaction.
+- `restore-session --group ID | --buddy ID` — Switches back to a previously saved session. **This IS a UI-manipulating command** (calls switch-chat/switch-buddy internally).
 
 **Output control (applies to `thread-messages`, `current-thread`, `current-group`, `read-unread`):**
 

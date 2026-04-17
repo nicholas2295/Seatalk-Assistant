@@ -3,7 +3,16 @@ import respx
 import httpx
 from unittest.mock import AsyncMock, patch
 from config import Config, GroupConfig
+import auth
 import seatalk_client
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_client():
+    """Reset the shared httpx client before each test so respx can intercept."""
+    auth._shared_client = None
+    yield
+    auth._shared_client = None
 
 GROUP_ID    = "grp-abc123"
 SEND_URL    = seatalk_client._SEND_GROUP_URL
