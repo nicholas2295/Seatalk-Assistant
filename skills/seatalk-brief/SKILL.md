@@ -9,7 +9,7 @@ description: Use when the user invokes /seatalk-brief or asks for a SeaTalk mess
 
 | Item | Value |
 |------|-------|
-| Scripts dir | `/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts/` |
+| Scripts dir | `$SEATALK_SCRIPTS_DIR` if set (used by the automated launchd run from a local clone), else `/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts/` |
 | Checkpoint | `~/.use-seatalk/seatalk-brief-checkpoint.json` |
 | Webhook | `https://openapi.seatalk.io/webhook/group/cEeKES9-SLGobUUDZZndIQ` |
 | Nicholas ID | `47934` |
@@ -45,7 +45,7 @@ This ensures the brief always covers at least 72 hours of messages, and if the l
 rm -rf /tmp/st-buddies /tmp/st-tagged-groups /tmp/st-tagged-threads
 rm -f /tmp/st-g-*.json /tmp/st-b-*.json /tmp/st-cached-sessions.json /tmp/st-missing.txt
 
-S="/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts"
+S="${SEATALK_SCRIPTS_DIR:-/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts}"
 
 # Check what sessions are already cached in Redux
 python3 "$S/cdp-reader.py" cached-sessions 2>/dev/null > /tmp/st-cached-sessions.json
@@ -127,7 +127,7 @@ If the check prints "All sessions cached", skip Phase B entirely and proceed to 
 > **Only run this if Phase A check reported missing sessions.** This phase switches chats (marks messages as read, briefly takes over the UI). Skip it to keep the brief fully non-invasive — the briefing will simply omit data for uncached sessions.
 
 ```bash
-S="/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts"
+S="${SEATALK_SCRIPTS_DIR:-/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts}"
 
 # Save user's current session so we can restore it after
 SAVED_SESSION=$(python3 "$S/cdp-reader.py" save-session 2>/dev/null)
@@ -171,7 +171,7 @@ fi
 Run a quick pre-scan to discover thread IDs in the tagged-group files, then fetch those threads. Skip this step entirely if no thread IDs are found.
 
 ```bash
-S="/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts"
+S="${SEATALK_SCRIPTS_DIR:-/Users/nicholas.lim/Library/CloudStorage/GoogleDrive-nicholas.lim@shopee.com/My Drive/Shopee/Claude/Seatalk Bridge/use-seatalk/scripts}"
 mkdir -p /tmp/st-tagged-threads
 
 python3 - <<'SCAN_EOF'
